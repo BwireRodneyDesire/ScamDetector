@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1791013731665,
+      "tag": "0000_bizarre_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1791029710236,
+      "tag": "0001_certain_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1791173587246,
+      "tag": "0002_awesome_kabuki",
+      "breakpoints": true
+    }
+  ]
+}
