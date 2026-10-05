@@ -34,7 +34,12 @@ type Result = NonNullable<
 type Signal = Result["signals"][number];
 type HistoryItem = Pick<Result, "url" | "verdict" | "riskScore" | "checkedAt">;
 type Explanation = { text: string; source: "ai" | "fallback" };
-const categories = ["URL structure", "Page signals", "HTTPS / TLS"] as const;
+const categories = [
+  "URL structure",
+  "Page signals",
+  "HTTPS / TLS",
+  "Reputation",
+] as const;
 const sampleUrls = [
   "https://web.whatsapp.com/",
   "https://secure-login-whatsapp-account.example.com/verify",
@@ -317,6 +322,11 @@ export default function Home() {
   });
   const explain = trpc.detector.explain.useMutation({
     onSuccess: setExplanation,
+    onError: () =>
+      setExplanation({
+        source: "fallback",
+        text: "The site could not be reached reliably, so some page checks were unavailable. The scan found the most important URL patterns shown below; these patterns can occur on legitimate sites, so verify the address independently and avoid entering sensitive information.",
+      }),
   });
   const checkUrl = trpc.detector.check.useMutation({
     onSuccess: async data => {
@@ -716,6 +726,84 @@ export default function Home() {
                     )}
                   </CardContent>
                 </Card>
+                <Card className="border-white/10 bg-[#101b22]/90">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-[#f4fbf8]">
+                      Domain info
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid min-w-0 grid-cols-2 gap-4 text-xs sm:grid-cols-3">
+                    <div className="min-w-0">
+                      <p className="text-[#9fb0ac]">Age</p>
+                      <p className="phishguard-wrap mt-1 font-medium text-[#e0e9e6]">
+                        {result.reputation.domainAgeDays === null
+                          ? "Not checked"
+                          : `${result.reputation.domainAgeDays} days`}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#9fb0ac]">Registrar</p>
+                      <p className="phishguard-wrap mt-1 font-medium text-[#e0e9e6]">
+                        {result.reputation.registrar ?? "Not checked"}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#9fb0ac]">Expiry</p>
+                      <p className="phishguard-wrap mt-1 font-medium text-[#e0e9e6]">
+                        {result.reputation.expiryDate
+                          ? result.reputation.expiryDate.slice(0, 10)
+                          : "Not checked"}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#9fb0ac]">Hosting</p>
+                      <p className="phishguard-wrap mt-1 font-medium text-[#e0e9e6]">
+                        {result.reputation.hostingCountry ?? "Not checked"}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#9fb0ac]">Popularity</p>
+                      <p className="phishguard-wrap mt-1 font-medium text-[#e0e9e6]">
+                        {result.reputation.popularityRank
+                          ? `#${result.reputation.popularityRank}`
+                          : "Not checked"}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#9fb0ac]">Redirects</p>
+                      <p className="phishguard-wrap mt-1 font-medium text-[#e0e9e6]">
+                        {Math.max(
+                          0,
+                          result.reputation.redirectChain.length - 1
+                        )}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <details className="rounded-xl border border-white/10 bg-[#101b22]/70 p-4 text-xs text-[#c1cfcb]">
+                  <summary className="cursor-pointer font-semibold text-[#f4fbf8]">
+                    How the score is calculated
+                  </summary>
+                  <ul className="mt-3 space-y-2 leading-5">
+                    <li>
+                      <strong className="text-[#e0e9e6]">Strong:</strong>{" "}
+                      blocklist matches +65, brand lookalike +30, cross-domain
+                      login redirect +34, new domain with login form +32.
+                    </li>
+                    <li>
+                      <strong className="text-[#e0e9e6]">Moderate:</strong>{" "}
+                      suspicious host language, form destinations, excessive
+                      subdomains, and cross-domain redirects add smaller
+                      weights.
+                    </li>
+                    <li>
+                      <strong className="text-[#e0e9e6]">Context:</strong>{" "}
+                      Tranco top-10k popularity lowers the score cap when no
+                      blocklist hit exists; popularity alone is not proof of
+                      safety.
+                    </li>
+                  </ul>
+                </details>
                 <p className="px-1 text-xs leading-5 text-[#9fb0ac]">
                   Note: this tool detects phishing patterns. It does not judge
                   whether a site is legal or free of ads/malware.

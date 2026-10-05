@@ -4,7 +4,7 @@ import type { InspectionResult } from "./inspection";
 export type ExplanationResult = { text: string; source: "ai" | "fallback" };
 
 const SYSTEM_PROMPT =
-  "You are a security assistant explaining website scan results to a non-technical user. Using ONLY the JSON findings, write exactly 2 or 3 short plain-language sentences under 60 words. Mention only the 1 or 2 most important findings by name. Community reports are unverified user opinions, not proof. If the JSON says the site could not be reached reliably, use that exact idea and do not call it a high-severity HTTPS problem. Say that listed patterns can also occur on legitimate sites when appropriate. End with one clear recommended action. Do not use markdown, asterisks, certainty claims, or outside facts.";
+  "You are a security assistant explaining website scan results to a non-technical user. Using ONLY the JSON findings, write exactly 2 or 3 short plain-language sentences under 60 words. Mention only the 1 or 2 most important findings by name, including domain age or blocklist results when relevant. Community reports are unverified user opinions, not proof. If the JSON says the site could not be reached reliably, say the site could not be reached reliably and do not call it a high-severity HTTPS problem. Say that listed patterns can also occur on legitimate sites when appropriate. End with one clear recommended action. Do not use markdown, asterisks, certainty claims, or outside facts.";
 
 function fallbackExplanation(result: InspectionResult): ExplanationResult {
   const notable = result.signals
@@ -59,6 +59,20 @@ export async function explainInspection(
       userCount: 0,
       categories: [],
     },
+    reputation: {
+      domainAgeDays: result.reputation.domainAgeDays,
+      registrationDate: result.reputation.registrationDate,
+      expiryDate: result.reputation.expiryDate,
+      registrar: result.reputation.registrar,
+      popularityRank: result.reputation.popularityRank,
+      hostingCountry: result.reputation.hostingCountry,
+      hostingProvider: result.reputation.hostingProvider,
+      redirectChain: result.reputation.redirectChain,
+      blocklists: [
+        ...result.reputation.safeBrowsingThreats,
+        ...result.reputation.urlhausThreats,
+      ],
+    },
     signals: result.signals.map(
       ({ id, category, label, severity, status, evidence }) =>
         result.fetchStatus === null && pageOnlyIds.has(id)
@@ -90,8 +104,24 @@ export async function explainInspection(
       maxTokens: 240,
     });
     const content = response.choices[0]?.message?.content;
-    const text =
-      typeof content === "string" ? content.trim().replace(/\*+/g, "") : "";
+    const rawText =
+      typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content
+              .map(part =>
+                typeof part === "string"
+                  ? part
+                  : typeof part === "object" &&
+                      part !== null &&
+                      "text" in part &&
+                      typeof part.text === "string"
+                    ? part.text
+                    : ""
+              )
+              .join(" ")
+          : "";
+    const text = rawText.trim().replace(/\*+/g, "");
     const words = text.split(/\s+/).filter(Boolean);
     if (
       !text ||
