@@ -6,6 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { inspectUrl, type InspectionResult } from "./inspection";
 import { explainInspection } from "./explanation";
+import { extractUrls } from "@shared/urlExtraction";
 import {
   addScamReport,
   addScanHistory,
@@ -54,6 +55,10 @@ function enforceScanRateLimit(
 }
 
 const scanInput = z.object({ url: z.string().trim().min(1).max(2048) });
+const messageScanInput = z.object({
+  message: z.string().trim().min(1).max(10_000),
+});
+const MAX_MESSAGE_URLS = 5;
 const historyInput = z.object({
   url: z.string().url().max(2048),
   verdict: z.enum(["Low risk", "Review", "High risk"]),
@@ -131,6 +136,55 @@ export const appRouter = router({
       }
       return result;
     }),
+    scanMessage: publicProcedure
+      .input(messageScanInput)
+      .mutation(async ({ ctx, input }) => {
+        const extractedUrls = extractUrls(input.message);
+        if (extractedUrls.length === 0)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "No HTTP or HTTPS links were found. Paste the full message, including its website address.",
+          });
+        if (extractedUrls.length > MAX_MESSAGE_URLS)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `This message contains ${extractedUrls.length} links. Scan up to ${MAX_MESSAGE_URLS} links at a time.`,
+          });
+
+        const results: Array<{
+          url: string;
+          result?: InspectionResult;
+          error?: string;
+        }> = [];
+        for (const url of extractedUrls) {
+          enforceScanRateLimit(ctx.req, ctx.user?.id);
+          try {
+            const inspected = await inspectUrl(url);
+            const result = await addCommunitySignal(inspected);
+            results.push({ url, result });
+            if (ctx.user) {
+              await addScanHistory({
+                userId: ctx.user.id,
+                url: result.url,
+                verdict: result.verdict,
+                riskScore: result.riskScore,
+                checkedAt: new Date(result.checkedAt),
+              });
+            }
+          } catch (error) {
+            results.push({
+              url,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "This link could not be scanned.",
+            });
+          }
+        }
+        if (ctx.user) await trimScanHistory(ctx.user.id);
+        return { extractedUrls, results };
+      }),
     explain: publicProcedure
       .input(z.object({ result: z.any() }))
       .mutation(async ({ input }) => explainInspection(input.result)),

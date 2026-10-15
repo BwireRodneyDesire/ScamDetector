@@ -35,6 +35,9 @@ pnpm build
 pnpm start
 ```
 
+On Windows, `pnpm start` works from PowerShell and Command Prompt as well; the
+script sets `NODE_ENV` through `cross-env`.
+
 ## Environment variables
 
 Copy `.env.example` to `.env` in a local environment and fill in the values. Never commit `.env` files.

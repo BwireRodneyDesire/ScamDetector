@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
   addScamReport: vi.fn(),
@@ -129,5 +129,49 @@ describe("community report enrichment", () => {
         }),
       ])
     );
+  });
+});
+
+describe("detector.scanMessage", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("extracts links, scans each one, and records authenticated history", async () => {
+    dbMocks.getCommunityReports.mockResolvedValue({
+      reportCount: 0,
+      userCount: 0,
+      categories: [],
+    });
+    inspectMock.inspectUrl
+      .mockResolvedValueOnce({ ...baseResult, url: "https://example.com/" })
+      .mockResolvedValueOnce({
+        ...baseResult,
+        url: "https://secure.example.org/login",
+        verdict: "Review",
+        riskScore: 30,
+      });
+
+    const result = await appRouter.createCaller(ctx).detector.scanMessage({
+      message:
+        "Check https://example.com and www.example.org/login. Do not share your password.",
+    });
+
+    expect(result.extractedUrls).toEqual([
+      "https://example.com/",
+      "https://www.example.org/login",
+    ]);
+    expect(result.results).toHaveLength(2);
+    expect(inspectMock.inspectUrl).toHaveBeenCalledTimes(2);
+    expect(dbMocks.addScanHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects messages containing more than five links", async () => {
+    const message = Array.from(
+      { length: 6 },
+      (_, index) => `https://example${index}.com`
+    ).join(" ");
+    await expect(
+      appRouter.createCaller(guestCtx).detector.scanMessage({ message })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(inspectMock.inspectUrl).not.toHaveBeenCalled();
   });
 });

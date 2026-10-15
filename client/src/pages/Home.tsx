@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import jsQR from "jsqr";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -19,8 +20,10 @@ import {
   FileText,
   Globe2,
   Info,
+  ListChecks,
   LockKeyhole,
   Radar,
+  QrCode,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
@@ -295,6 +298,7 @@ function IntroCards() {
 
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [message, setMessage] = useState("");
   const [phase, setPhase] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [copied, setCopied] = useState(false);
@@ -303,6 +307,7 @@ export default function Home() {
     source: "ai",
   });
   const [showImport, setShowImport] = useState(false);
+  const qrInputRef = useRef<HTMLInputElement>(null);
   const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
   const utils = trpc.useUtils();
   const historyQuery = trpc.detector.history.useQuery(undefined, {
@@ -348,6 +353,7 @@ export default function Home() {
         );
     },
   });
+  const scanMessage = trpc.detector.scanMessage.useMutation();
   const result = checkUrl.data;
   const displayHistory: HistoryItem[] = isAuthenticated
     ? (historyQuery.data ?? []).map(item => ({
@@ -409,7 +415,7 @@ export default function Home() {
       .length,
   }));
   const reportText = result
-    ? `PhishGuard report\nURL: ${result.url}\nVerdict: ${result.verdict}\nRisk score: ${result.riskScore}/100\n\nSignals:\n${result.signals.map(signal => `- [${signal.severity}] ${signal.label}: ${signal.evidence}`).join("\n")}`
+    ? `PhishGuard report\nURL: ${result.url}\nVerdict: ${result.verdict}\nRisk score: ${result.riskScore}/100\n\nWhy this result:\n${result.reasons.map(reason => `- ${reason}`).join("\n")}\n\nSignals:\n${result.signals.map(signal => `- [${signal.severity}] ${signal.label}: ${signal.evidence}`).join("\n")}`
     : "";
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -443,6 +449,58 @@ export default function Home() {
         checkedAt: item.checkedAt,
       })),
     });
+  const scanQrImage = (file: File) => {
+    const imageUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Could not read the uploaded image.");
+        context.drawImage(image, 0, 0);
+        const imageData = context.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+        const decoded = jsQR(
+          imageData.data,
+          imageData.width,
+          imageData.height
+        );
+        if (!decoded?.data)
+          throw new Error(
+            "No QR code was found. Upload a clearer image with the code fully visible."
+          );
+        setUrl(decoded.data);
+        setMessage("");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (error) {
+        scanMessage.reset();
+        checkUrl.reset();
+        window.alert(
+          error instanceof Error
+            ? error.message
+            : "The QR code could not be read."
+        );
+      } finally {
+        URL.revokeObjectURL(imageUrl);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(imageUrl);
+      window.alert("The uploaded image could not be opened.");
+    };
+    image.src = imageUrl;
+  };
+  const handleQrFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) scanQrImage(file);
+  };
 
   return (
     <div className="min-h-screen bg-[#081018] text-[#edf5f2]">
@@ -528,6 +586,93 @@ export default function Home() {
                   </Button>
                 </div>
               </form>
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <label
+                  htmlFor="message"
+                  className="text-xs font-medium text-[#e0e9e6]"
+                >
+                  Paste a WhatsApp, SMS, or email message
+                </label>
+                <textarea
+                  id="message"
+                  value={message}
+                  onChange={event => setMessage(event.target.value)}
+                  placeholder="Paste the message here. PhishGuard will find up to 5 links."
+                  maxLength={10_000}
+                  className="mt-2 min-h-24 w-full resize-y rounded-md border border-white/10 bg-[#081018] px-3 py-2 text-sm text-[#f4fbf8] outline-none placeholder:text-[#8d9f9b] focus:ring-2 focus:ring-[#8df0b8]"
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!message.trim() || scanMessage.isPending}
+                    onClick={() => scanMessage.mutate({ message })}
+                    className="border-white/10 text-[#c1cfcb] hover:bg-white/5 hover:text-[#f4fbf8]"
+                  >
+                    {scanMessage.isPending ? "Scanning links…" : "Scan links"}
+                    {!scanMessage.isPending && (
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    )}
+                  </Button>
+                  <input
+                    ref={qrInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrFile}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => qrInputRef.current?.click()}
+                    className="border-white/10 text-[#c1cfcb] hover:bg-white/5 hover:text-[#f4fbf8]"
+                  >
+                    <QrCode className="mr-2 h-4 w-4" /> Scan QR image
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-[#9fb0ac]">
+                  Do not paste passwords, OTPs, or private conversations.
+                  Uploaded QR images are decoded in your browser.
+                </p>
+                {scanMessage.error && (
+                  <div className="mt-3 rounded-lg border border-[#ff6b5f]/20 bg-[#ff6b5f]/[0.08] p-3 text-xs text-[#ffb4ab]">
+                    {scanMessage.error.message}
+                  </div>
+                )}
+                {scanMessage.data && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#9fb0ac]">
+                      Found {scanMessage.data.extractedUrls.length} link
+                      {scanMessage.data.extractedUrls.length === 1 ? "" : "s"}
+                    </p>
+                    {scanMessage.data.results.map(item => (
+                      <button
+                        key={item.url}
+                        type="button"
+                        onClick={() => item.result && setUrl(item.result.url)}
+                        className="flex w-full items-start justify-between gap-3 rounded-lg border border-white/10 bg-[#081018]/70 p-3 text-left transition hover:border-[#8df0b8]/40"
+                      >
+                        <span className="min-w-0">
+                          <span className="block break-all text-xs text-[#c1cfcb]">
+                            {item.url}
+                          </span>
+                          <span className="mt-1 block text-[11px] text-[#9fb0ac]">
+                            {item.error ??
+                              `${item.result?.verdict} · risk ${item.result?.riskScore}/100`}
+                          </span>
+                        </span>
+                        {item.result && (
+                          <span
+                            className={`shrink-0 text-[10px] font-semibold uppercase ${verdictTone(item.result.verdict).color}`}
+                          >
+                            {item.result.verdict}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="mt-5 flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-[#c1cfcb]">Try a sample</span>
                 {sampleUrls.map(sample => (
@@ -661,6 +806,31 @@ export default function Home() {
                       Confidence: {Math.round(result.confidence * 100)}% ·
                       Heuristic analysis
                     </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-white/10 bg-[#101b22]/90">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <ListChecks className="h-4 w-4 text-[#8df0b8]" />
+                      <CardTitle className="text-sm text-[#f4fbf8]">
+                        Why this result
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-3">
+                      {result.reasons.map(reason => (
+                        <li
+                          key={reason}
+                          className="flex items-start gap-2.5 text-sm leading-5 text-[#c1cfcb]"
+                        >
+                          <span
+                            className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${tone.bar}`}
+                          />
+                          <span className="phishguard-wrap">{reason}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </CardContent>
                 </Card>
                 <Card className="border-[#8df0b8]/15 bg-[#8df0b8]/[0.05]">
