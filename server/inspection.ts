@@ -1,6 +1,10 @@
 import dns from "node:dns/promises";
 import net from "node:net";
 import { collectReputation, type ReputationData } from "./reputation";
+import {
+  predictUrlWithLocalModel,
+  type MlPrediction,
+} from "./mlPredictor";
 
 export type SignalSeverity = "low" | "medium" | "high";
 export type SignalCategory =
@@ -39,6 +43,8 @@ export type InspectionResult = {
     categories: Array<{ category: string; count: number }>;
   };
   reputation: ReputationData;
+  ruleRiskScore: number;
+  ml: MlPrediction;
 };
 
 const MAX_HTML_BYTES = 1_500_000;
@@ -338,6 +344,7 @@ export async function inspectUrl(rawUrl: string): Promise<InspectionResult> {
   const hostHasManyHyphens = (host.match(/-/g) ?? []).length >= 3;
   const urlLength = url.href.length;
   const reputation = await reputationPromise;
+  const ml = await predictUrlWithLocalModel(url.href);
 
   const signals: InspectionSignal[] = [];
   const add = (signal: InspectionSignal) => signals.push(signal);
@@ -639,6 +646,21 @@ export async function inspectUrl(rawUrl: string): Promise<InspectionResult> {
     !hasBlocklistHit
   )
     riskScore = Math.min(riskScore, 24);
+  const ruleRiskScore = riskScore;
+  if (ml.available && ml.probability !== undefined) {
+    const mlRiskScore = Math.round(ml.probability * 100);
+    riskScore = Math.round(ruleRiskScore * 0.4 + mlRiskScore * 0.6);
+    if (hasBlocklistHit) riskScore = Math.max(riskScore, 65);
+  }
+  if (entity && strongSignals.filter(Boolean).length === 0)
+    riskScore = Math.min(riskScore, 8);
+  if (
+    popularityApplies &&
+    reputation.popularityRank &&
+    reputation.popularityRank <= 10000 &&
+    !hasBlocklistHit
+  )
+    riskScore = Math.min(riskScore, 24);
   signals
     .filter(signal => signal.status === "warning")
     .forEach(signal => reasons.push(`${signal.label}: ${signal.evidence}.`));
@@ -646,6 +668,18 @@ export async function inspectUrl(rawUrl: string): Promise<InspectionResult> {
     reasons.push(
       "The address and page response show no strong phishing pattern."
     );
+  if (ml.available && ml.probability !== undefined) {
+    const percentage = Math.round(ml.probability * 100);
+    signals.push({
+      id: "ml-url-model",
+      category: "URL structure",
+      label: "Machine-learning URL model",
+      severity: percentage >= 85 ? "high" : percentage >= 50 ? "medium" : "low",
+      status: percentage >= 50 ? "warning" : "info",
+      evidence: `${percentage}% phishing probability from the local URL model`,
+      why: "This model estimates risk from lexical URL patterns. It is one signal and does not prove that a site is malicious.",
+    });
+  }
 
   const verdict =
     riskScore >= 45 ? "High risk" : riskScore >= 25 ? "Review" : "Low risk";
@@ -667,7 +701,9 @@ export async function inspectUrl(rawUrl: string): Promise<InspectionResult> {
         : "No strong phishing signals found";
   const summary = fetchFailed
     ? "The address was analyzed, but the page did not respond reliably, so confidence is lower."
-    : `The rule-based scan evaluated ${signals.length} signals across URL structure, page signals, HTTPS / TLS, and reputation.`;
+    : ml.available
+      ? `The hybrid scan combined the local URL model with ${signals.length} rule and reputation signals.`
+      : `The rule-based scan evaluated ${signals.length} signals across URL structure, page signals, HTTPS / TLS, and reputation. The local ML model was unavailable.`;
 
   return {
     url: url.href,
@@ -684,5 +720,7 @@ export async function inspectUrl(rawUrl: string): Promise<InspectionResult> {
     fetchStatus,
     allowlistedEntity: entity,
     reputation,
+    ruleRiskScore,
+    ml,
   };
 }

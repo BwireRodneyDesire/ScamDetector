@@ -1,6 +1,6 @@
 # PhishGuard
 
-PhishGuard is a research prototype that scans a website URL for phishing patterns. It combines URL structure, page signals, HTTPS/TLS observations, community reports, and a server-side **Reputation & infrastructure** layer.
+PhishGuard is a research prototype that scans a website URL for phishing patterns. It combines a locally running URL machine-learning model, URL structure, page signals, HTTPS/TLS observations, community reports, and a server-side **Reputation & infrastructure** layer.
 
 ## Features
 
@@ -14,7 +14,7 @@ PhishGuard is a research prototype that scans a website URL for phishing pattern
 
 ## Scoring
 
-The verdict remains rule-based: `Low risk` (<25), `Review` (25–44), or `High risk` (45+). Strong signals carry the most weight: blocklist matches, brand lookalikes, cross-domain login redirects, and very new domains with login forms. Domain popularity is context only: Tranco top-10k domains receive a score cap when no blocklist hit exists. A popular domain is not automatically safe, and an unlisted domain is not automatically suspicious.
+The hybrid verdict uses the local URL model when available: 60% model probability and 40% of the existing rule score. Blocklist hits remain at least high risk, and the existing rules remain active for page and reputation evidence. If the local model cannot run, the scanner explicitly falls back to the rule-based score. `Low risk` is below 25, `Review` is 25–44, and `High risk` is 45+.
 
 The result page shows the signal category breakdown, domain information, redirect count, and an expandable score explanation. External services that fail or are not configured are shown as `Not checked`; they never crash a scan.
 
@@ -62,6 +62,8 @@ The deployed Manus environment supplies its platform variables. Add optional rep
 ## Project structure
 
 - `server/inspection.ts` — rule-based URL/page scanner and score.
+- `server/mlPredictor.ts` — local Python/ONNX model bridge with explicit fallback.
+- `ml/` — scumlens URL feature extractor, ONNX model, thresholds, and evaluation metadata.
 - `server/reputation.ts` — server-only RDAP, blocklist, Tranco, hosting, redirect, cache, and timeout logic.
 - `server/routers.ts` — tRPC scan, history, report, and AI procedures.
 - `client/src/pages/Home.tsx` — scan result interface.
