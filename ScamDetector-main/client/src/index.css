@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  color: #edf5f2;
+  background: #081018;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --background: 210 31% 5%;
+  --foreground: 150 24% 94%;
+  --card: 204 37% 10%;
+  --card-foreground: 150 24% 94%;
+  --popover: 204 37% 10%;
+  --popover-foreground: 150 24% 94%;
+  --primary: 145 75% 76%;
+  --primary-foreground: 155 37% 6%;
+  --secondary: 204 27% 16%;
+  --secondary-foreground: 150 24% 94%;
+  --muted: 204 27% 16%;
+  --muted-foreground: 160 10% 58%;
+  --accent: 145 75% 76%;
+  --accent-foreground: 155 37% 6%;
+  --destructive: 5 100% 71%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 204 20% 22%;
+  --input: 204 20% 22%;
+  --ring: 145 75% 76%;
+  --radius: 0.8rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: hsl(var(--border));
+}
+html {
+  min-width: 0;
+  background: #081018;
+}
+body {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+  background: #081018;
+}
+#root,
+main,
+header,
+footer,
+section,
+[data-slot="card"],
+[data-slot="card-header"],
+[data-slot="card-content"] {
+  min-width: 0;
+  max-width: 100%;
+}
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+button,
+input {
+  max-width: 100%;
+  font: inherit;
+}
+::selection {
+  background: rgba(141, 240, 184, 0.25);
+  color: #f4fbf8;
+}
+
+@media (max-width: 767px) {
+  .phishguard-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .phishguard-flex-child {
+    min-width: 0;
+  }
+  .phishguard-wrap {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  [data-slot="card"] {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
